@@ -43,6 +43,36 @@ internal interface ICoreNativeManager
 	);
 
 	/// <summary>
+	/// Calls <see cref="PInvoke.GetCurrentThreadId"/>. Used to identify the dedicated keyboard-hook
+	/// thread so its message loop can be signalled to stop.
+	/// </summary>
+	/// <returns></returns>
+	uint GetCurrentThreadId();
+
+	/// <summary>
+	/// Calls <see cref="PInvoke.GetMessage(out MSG, HWND, uint, uint)"/>. Used to pump the message
+	/// loop on the dedicated keyboard-hook thread (a low-level hook requires its owning thread to
+	/// pump messages).
+	/// </summary>
+	/// <param name="lpMsg"></param>
+	/// <param name="hWnd"></param>
+	/// <param name="wMsgFilterMin"></param>
+	/// <param name="wMsgFilterMax"></param>
+	/// <returns></returns>
+	BOOL GetMessage(out MSG lpMsg, HWND hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+	/// <summary>
+	/// Calls <see cref="PInvoke.PostThreadMessage(uint, uint, WPARAM, LPARAM)"/>. Used to post
+	/// <c>WM_QUIT</c> to the dedicated keyboard-hook thread so its message loop exits.
+	/// </summary>
+	/// <param name="idThread"></param>
+	/// <param name="Msg"></param>
+	/// <param name="wParam"></param>
+	/// <param name="lParam"></param>
+	/// <returns></returns>
+	BOOL PostThreadMessage(uint idThread, uint Msg, WPARAM wParam, LPARAM lParam);
+
+	/// <summary>
 	/// Set the <see cref="PInvoke.CallNextHookEx(SafeHandle, int, WPARAM, LPARAM)"/> <br/>
 	///
 	/// For more, see https://docs.microsoft.com/windows/win32/api/winuser/nf-winuser-callnexthookex
@@ -61,6 +91,20 @@ internal interface ICoreNativeManager
 	/// <param name="nVirtKey"></param>
 	/// <returns></returns>
 	short GetKeyState(int nVirtKey);
+
+	/// <summary>
+	/// Calls <see cref="PInvoke.GetAsyncKeyState(int)"/> <br/>
+	///
+	/// Unlike <see cref="GetKeyState(int)"/>, this returns the real-time physical state of the
+	/// key, independent of the calling thread's message queue. This makes it safe to query
+	/// modifier state from within a low-level keyboard hook, where the queue-based
+	/// <see cref="GetKeyState(int)"/> can lag behind near-simultaneous key presses. <br/>
+	///
+	/// For more, see https://docs.microsoft.com/windows/win32/api/winuser/nf-winuser-getasynckeystate
+	/// </summary>
+	/// <param name="nVirtKey"></param>
+	/// <returns></returns>
+	short GetAsyncKeyState(int nVirtKey);
 
 	/// <summary>
 	/// Set the <see cref="PInvoke.GetCursorPos(out System.Drawing.Point)"/> <br/>

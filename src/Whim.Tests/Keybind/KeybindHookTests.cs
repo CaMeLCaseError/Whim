@@ -1,5 +1,6 @@
 using System.Linq;
 using AutoFixture;
+using Microsoft.UI.Dispatching;
 using Windows.Win32;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -69,7 +70,7 @@ public class KeybindHookTests
 	{
 		foreach (VIRTUAL_KEY modifier in modifiers)
 		{
-			internalCtx.CoreNativeManager.GetKeyState((int)modifier).Returns((short)-32768);
+			internalCtx.CoreNativeManager.GetAsyncKeyState((int)modifier).Returns((short)-32768);
 		}
 
 		internalCtx
@@ -78,6 +79,15 @@ public class KeybindHookTests
 
 		ctx.KeybindManager.GetCommands(Arg.Any<IKeybind>()).Returns(commands);
 		ctx.KeybindManager.Modifiers.Returns(modifiers);
+
+		// Commands are dispatched to the UI thread via TryEnqueue; run the callback inline so tests
+		// can observe the command executing synchronously.
+		ctx.NativeManager.TryEnqueue(Arg.Any<DispatcherQueueHandler>())
+			.Returns(callInfo =>
+			{
+				callInfo.Arg<DispatcherQueueHandler>().Invoke();
+				return true;
+			});
 	}
 
 	[Theory, AutoSubstituteData<KeybindHookCustomization>]
@@ -133,11 +143,9 @@ public class KeybindHookTests
 		internalCtx.CoreNativeManager.Received(1).CallNextHookEx(0, PInvoke.WM_KEYDOWN, 0);
 	}
 
-	// WM_KEYDOWN and WM_SYSKEYDOWN
+	// Messages that are neither key-down nor key-up (0x0099; WM_DEADCHAR 0x0103) are ignored.
 	[InlineAutoSubstituteData<KeybindHookCustomization>(0x0099)]
-	[InlineAutoSubstituteData<KeybindHookCustomization>(0x0101)]
 	[InlineAutoSubstituteData<KeybindHookCustomization>(0x0103)]
-	[InlineAutoSubstituteData<KeybindHookCustomization>(0x0105)]
 	[Theory]
 	internal void LowLevelKeyboardProc_ValidNCodeButInvalidWParam(
 		uint wParam,
@@ -203,7 +211,7 @@ public class KeybindHookTests
 
 		// Setup so only the modifier is pressed
 		ctx.KeybindManager.Modifiers.Returns([modifier]);
-		internalCtx.CoreNativeManager.GetKeyState((int)modifier).Returns((short)-32768);
+		internalCtx.CoreNativeManager.GetAsyncKeyState((int)modifier).Returns((short)-32768);
 		internalCtx
 			.CoreNativeManager.PtrToStructure<KBDLLHOOKSTRUCT>(Arg.Any<nint>())
 			.Returns(new KBDLLHOOKSTRUCT { vkCode = (uint)modifier });
@@ -214,6 +222,67 @@ public class KeybindHookTests
 
 		// Then: Should call next hook
 		internalCtx.CoreNativeManager.Received(1).CallNextHookEx(0, PInvoke.WM_KEYDOWN, 0);
+		Assert.Equal(0, (nint)result!);
+	}
+
+	[Theory]
+	[InlineAutoSubstituteData<KeybindHookCustomization>(VIRTUAL_KEY.VK_OEM_PA1)]
+	[InlineAutoSubstituteData<KeybindHookCustomization>(VIRTUAL_KEY.VK_NONCONVERT)]
+	internal void LowLevelKeyboardProc_OnlyNonSystemModifierPressed_IsSwallowed(
+		VIRTUAL_KEY modifier,
+		IContext ctx,
+		IInternalContext internalCtx
+	)
+	{
+		// Given a non-system key (e.g. muhenkan) is configured as a Whim modifier
+		CaptureKeybindHook capture = CaptureKeybindHook.Create(internalCtx);
+		KeybindHook keybindHook = new(ctx, internalCtx);
+
+		ctx.KeybindManager.Modifiers.Returns([modifier]);
+		internalCtx
+			.CoreNativeManager.PtrToStructure<KBDLLHOOKSTRUCT>(Arg.Any<nint>())
+			.Returns(new KBDLLHOOKSTRUCT { vkCode = (uint)modifier });
+
+		// When the modifier is pressed on its own
+		keybindHook.PostInitialize();
+		LRESULT? result = capture.LowLevelKeyboardProc?.Invoke(0, PInvoke.WM_KEYDOWN, 0);
+
+		// Then it is swallowed (so it doesn't leak a character to the focused window), not passed on
+		Assert.Equal(1, (nint)result!);
+		internalCtx.CoreNativeManager.DidNotReceive().CallNextHookEx(0, PInvoke.WM_KEYDOWN, 0);
+	}
+
+	[Theory, AutoSubstituteData<KeybindHookCustomization>]
+	internal void LowLevelKeyboardProc_SwallowedModifierReleased_NoLongerMatches(
+		IContext ctx,
+		IInternalContext internalCtx
+	)
+	{
+		// Given muhenkan (a non-system modifier) is configured as a Whim modifier
+		CaptureKeybindHook capture = CaptureKeybindHook.Create(internalCtx);
+		KeybindHook keybindHook = new(ctx, internalCtx);
+		keybindHook.PostInitialize();
+
+		VIRTUAL_KEY modifier = VIRTUAL_KEY.VK_OEM_PA1;
+		ctx.KeybindManager.Modifiers.Returns([modifier]);
+
+		// When muhenkan is pressed and then released (both events swallowed, tracking cleared)
+		internalCtx
+			.CoreNativeManager.PtrToStructure<KBDLLHOOKSTRUCT>(Arg.Any<nint>())
+			.Returns(new KBDLLHOOKSTRUCT { vkCode = (uint)modifier });
+		capture.LowLevelKeyboardProc?.Invoke(0, PInvoke.WM_KEYDOWN, 0);
+		capture.LowLevelKeyboardProc?.Invoke(0, PInvoke.WM_KEYUP, 0);
+
+		// And then VK_2 is pressed on its own (muhenkan no longer physically down)
+		internalCtx.CoreNativeManager.GetAsyncKeyState((int)modifier).Returns((short)0);
+		internalCtx
+			.CoreNativeManager.PtrToStructure<KBDLLHOOKSTRUCT>(Arg.Any<nint>())
+			.Returns(new KBDLLHOOKSTRUCT { vkCode = (uint)VIRTUAL_KEY.VK_2 });
+		LRESULT? result = capture.LowLevelKeyboardProc?.Invoke(0, PInvoke.WM_KEYDOWN, 0);
+
+		// Then the keybind is looked up with no modifiers (the released muhenkan is not applied),
+		// so the combo does not fire and the key is passed through.
+		ctx.KeybindManager.Received().GetCommands(new Keybind([], VIRTUAL_KEY.VK_2));
 		Assert.Equal(0, (nint)result!);
 	}
 

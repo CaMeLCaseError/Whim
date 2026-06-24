@@ -29,7 +29,17 @@ internal class CoreNativeManager(IContext context) : ICoreNativeManager
 	public LRESULT CallNextHookEx(int nCode, WPARAM wParam, LPARAM lParam) =>
 		PInvoke.CallNextHookEx(null, nCode, wParam, lParam);
 
+	public uint GetCurrentThreadId() => PInvoke.GetCurrentThreadId();
+
+	public BOOL GetMessage(out MSG lpMsg, HWND hWnd, uint wMsgFilterMin, uint wMsgFilterMax) =>
+		PInvoke.GetMessage(out lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
+
+	public BOOL PostThreadMessage(uint idThread, uint Msg, WPARAM wParam, LPARAM lParam) =>
+		PInvoke.PostThreadMessage(idThread, Msg, wParam, lParam);
+
 	public short GetKeyState(int nVirtKey) => PInvoke.GetKeyState(nVirtKey);
+
+	public short GetAsyncKeyState(int nVirtKey) => PInvoke.GetAsyncKeyState(nVirtKey);
 
 	public BOOL GetCursorPos(out IPoint<int> lpPoint)
 	{

@@ -336,8 +336,14 @@ public class WindowEventListenerTests
 		window.Handle.Returns((HWND)1);
 		window.ProcessFileName.Returns("firefox.exe");
 		ctx.Store.Pick(Arg.Any<PurePicker<Result<IWindow>>>()).Returns(Result.FromValue(window));
-		ctx.WindowProcessorManager
-			.ShouldBeIgnored(window, Arg.Any<uint>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<uint>(), Arg.Any<uint>())
+		ctx.WindowProcessorManager.ShouldBeIgnored(
+				window,
+				Arg.Any<uint>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<uint>(),
+				Arg.Any<uint>()
+			)
 			.Returns(true);
 
 		CaptureWinEventProc capture = CaptureWinEventProc.Create(internalCtx);

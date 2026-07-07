@@ -21,6 +21,14 @@ internal record DeactivateWorkspaceTransform(WorkspaceId WorkspaceId)
 			updatedPositions = updatedPositions.SetItem(hwnd, newPos);
 
 			ctx.NativeManager.HideWindow(hwnd);
+
+			// Record the deliberate hide, so a window which re-shows itself and steals focus right
+			// after (e.g. Windows Terminal) can be detected and re-hidden instead of undoing the
+			// workspace switch. See WindowFocusedTransform.
+			rootSector.WindowSector.WhimHiddenWindows = rootSector.WindowSector.WhimHiddenWindows.SetItem(
+				hwnd,
+				Environment.TickCount
+			);
 		}
 
 		return workspace with

@@ -9,7 +9,7 @@ internal record WindowFocusedTransform(IWindow? Window) : Transform()
 	)
 	{
 		SetActiveMonitor(ctx, internalCtx, mutableRootSector);
-		UpdateMapSector(ctx, Window);
+		UpdateMapSector(ctx, internalCtx, mutableRootSector, Window);
 
 		mutableRootSector.WindowSector.QueueEvent(new WindowFocusedEventArgs() { Window = Window });
 
@@ -69,7 +69,20 @@ internal record WindowFocusedTransform(IWindow? Window) : Transform()
 		}
 	}
 
-	private static void UpdateMapSector(IContext ctx, IWindow? window)
+	/// <summary>
+	/// How long after Whim deliberately hides a window its focus and minimize-start events are
+	/// treated as spurious. Nothing legitimate can focus or minimize a hidden window this quickly -
+	/// hidden windows have no taskbar button and do not appear in Alt+Tab. See also
+	/// <see cref="WindowMinimizeStartedTransform"/>.
+	/// </summary>
+	internal const int WhimHiddenGracePeriodMs = 1000;
+
+	private static void UpdateMapSector(
+		IContext ctx,
+		IInternalContext internalCtx,
+		MutableRootSector rootSector,
+		IWindow? window
+	)
 	{
 		// Only activate the workspace if the window is in a workspace, and the workspace isn't currently
 		// active.
@@ -87,6 +100,35 @@ internal record WindowFocusedTransform(IWindow? Window) : Transform()
 
 		if (ctx.Store.Pick(PickMonitorByWorkspace(workspaceForWindow.Id)).IsSuccessful)
 		{
+			return;
+		}
+
+		// Some apps - notably Windows Terminal, which hosts all its windows in a single process -
+		// re-show themselves and re-assert foreground immediately after Whim hides them during a
+		// workspace switch. Treating that as intent would activate the just-deactivated workspace and
+		// undo the switch. If Whim deliberately hid this window a moment ago, re-hide it instead: it
+		// must not be left genuinely visible (e.g. showing up in Alt+Tab from another workspace).
+		//
+		// Re-hiding was previously found to sometimes make Windows Terminal report a genuine
+		// EVENT_SYSTEM_MINIMIZESTART for the window immediately afterwards. That's no longer a
+		// problem: WindowMinimizeStartedTransform now recognizes and ignores a minimize-start for a
+		// window Whim just hid, so it can't get stuck needing a manual Alt+Tab to recover.
+		if (
+			rootSector.WindowSector.WhimHiddenWindows.TryGetValue(window.Handle, out int hiddenAtTickCount)
+			&& Environment.TickCount - hiddenAtTickCount < WhimHiddenGracePeriodMs
+		)
+		{
+			Logger.Debug($"Window {window} was just hidden by Whim; re-hiding instead of activating its workspace");
+			ctx.NativeManager.HideWindow(window.Handle);
+			return;
+		}
+
+		// Only re-activate the window's workspace if the window is actually visible. A user cannot
+		// deliberately focus a window that isn't on screen; genuinely summoned windows (taskbar
+		// clicks, URL handlers, etc.) are visible by the time this runs.
+		if (!internalCtx.CoreNativeManager.IsWindowVisible(window.Handle))
+		{
+			Logger.Debug($"Window {window} is not visible; not activating workspace {workspaceForWindow.Id}");
 			return;
 		}
 

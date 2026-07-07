@@ -103,6 +103,7 @@ public class WindowEventListenerTests
 	private static void AssertDispatches(
 		IContext ctx,
 		int windowAddedTransformCount = 0,
+		int windowShownTransformCount = 0,
 		int windowFocusedTransformCount = 0,
 		int windowHiddenTransformCount = 0,
 		int windowRemovedTransformCount = 0,
@@ -114,6 +115,7 @@ public class WindowEventListenerTests
 	)
 	{
 		ctx.Store.Received(windowAddedTransformCount).Dispatch(Arg.Any<WindowAddedTransform>());
+		ctx.Store.Received(windowShownTransformCount).Dispatch(Arg.Any<WindowShownTransform>());
 		ctx.Store.Received(windowFocusedTransformCount).Dispatch(Arg.Any<WindowFocusedTransform>());
 		ctx.Store.Received(windowHiddenTransformCount).Dispatch(Arg.Any<WindowHiddenTransform>());
 		ctx.Store.Received(windowRemovedTransformCount).Dispatch(Arg.Any<WindowRemovedTransform>());
@@ -232,12 +234,18 @@ public class WindowEventListenerTests
 		// When we create a window
 		capture.WinEventProc!.Invoke(new HWINEVENTHOOK(0), PInvoke.EVENT_OBJECT_SHOW, hwnd, 0, 0, 0, 0);
 
-		// Then we don't receive any further dispatches
-		AssertDispatches(ctx, windowAddedTransformCount: 1);
+		// Then the newly-added window is also passed through WindowShownTransform
+		AssertDispatches(ctx, windowAddedTransformCount: 1, windowShownTransformCount: 1);
 	}
 
 	public static IEnumerable<object[]> WinEventProcCasesData()
 	{
+		yield return new object[]
+		{
+			PInvoke.EVENT_OBJECT_SHOW,
+			new Func<IWindow, Transform>(window => new WindowShownTransform(window)),
+		};
+
 		yield return new object[]
 		{
 			PInvoke.EVENT_SYSTEM_FOREGROUND,
@@ -324,10 +332,13 @@ public class WindowEventListenerTests
 	[Theory, AutoSubstituteData]
 	internal void WinEventProc_Ignore(IContext ctx, IInternalContext internalCtx, IWindow window)
 	{
-		// Given the window is a Firefox window
+		// Given the window is a Firefox window which the window processor says to ignore this event for
 		window.Handle.Returns((HWND)1);
 		window.ProcessFileName.Returns("firefox.exe");
 		ctx.Store.Pick(Arg.Any<PurePicker<Result<IWindow>>>()).Returns(Result.FromValue(window));
+		ctx.WindowProcessorManager
+			.ShouldBeIgnored(window, Arg.Any<uint>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<uint>(), Arg.Any<uint>())
+			.Returns(true);
 
 		CaptureWinEventProc capture = CaptureWinEventProc.Create(internalCtx);
 

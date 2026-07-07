@@ -305,6 +305,13 @@ internal interface ICoreNativeManager
 	IEnumerable<HWND> GetOwnedWindows(HWND owner);
 
 	/// <summary>
+	/// Returns <see langword="true"/> when the window is currently visible (<c>WS_VISIBLE</c> is set).
+	/// </summary>
+	/// <param name="hwnd"></param>
+	/// <returns></returns>
+	bool IsWindowVisible(HWND hwnd);
+
+	/// <summary>
 	/// Returns <see langword="true"/> when the window is a cloaked window.
 	/// For example, and empty <c>ApplicationFrameWindow</c>.
 	/// For more, see https://social.msdn.microsoft.com/Forums/vstudio/en-US/f8341376-6015-4796-8273-31e0be91da62/difference-between-actually-visible-and-not-visiblewhich-are-there-but-we-cant-see-windows-of?forum=vcgeneral

@@ -172,6 +172,8 @@ internal class CoreNativeManager(IContext context) : ICoreNativeManager
 		return windows;
 	}
 
+	public bool IsWindowVisible(HWND hwnd) => PInvoke.IsWindowVisible(hwnd);
+
 	public bool IsStandardWindow(HWND hwnd)
 	{
 		if (PInvoke.GetAncestor(hwnd, GET_ANCESTOR_FLAGS.GA_ROOT) != hwnd || !PInvoke.IsWindowVisible(hwnd))

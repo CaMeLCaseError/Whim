@@ -155,6 +155,10 @@ public class WindowFocusedTransformTests
 
 		Setup_MonitorFromWindow(internalCtx, window.Handle, HMONITOR_3);
 
+		// The window is visible - workspaces are only activated for focused windows which are
+		// actually on screen (hidden windows can fire spurious focus events).
+		internalCtx.CoreNativeManager.IsWindowVisible(window.Handle).Returns(true);
+
 		WindowFocusedTransform sut = new(window);
 
 		// When we dispatch the transform
@@ -167,5 +171,89 @@ public class WindowFocusedTransformTests
 
 		// Then the active monitor index is updated based on MonitorFromWindow		Assert.Equal(HMONITOR_1, rootSector.MonitorSector.ActiveMonitorHandle);
 		Assert.Equal(HMONITOR_3, rootSector.MonitorSector.LastWhimActiveMonitorHandle);
+	}
+
+	[Theory, AutoSubstituteData<StoreCustomization>]
+	internal void HiddenWindowFocused_DoesNotActivateWorkspace(
+		IContext ctx,
+		IInternalContext internalCtx,
+		MutableRootSector rootSector
+	)
+	{
+		// Given a window on a workspace which isn't shown on any monitor, and the window is NOT
+		// visible - e.g. Windows Terminal re-asserting foreground on a window Whim just hid while
+		// switching workspaces
+		IWindow window = CreateWindow((HWND)1);
+		Workspace workspace1 = CreateWorkspace();
+		Workspace workspace2 = CreateWorkspace();
+
+		Setup_Monitors(rootSector);
+
+		var monitors = rootSector.MonitorSector.Monitors;
+
+		PopulateMonitorWorkspaceMap(rootSector, monitors[0], workspace1);
+		PopulateWindowWorkspaceMap(rootSector, window, workspace2);
+
+		Setup_MonitorFromWindow(internalCtx, window.Handle, HMONITOR_3);
+
+		internalCtx.CoreNativeManager.IsWindowVisible(window.Handle).Returns(false);
+
+		WindowFocusedTransform sut = new(window);
+
+		// When we dispatch the transform
+		CustomAssert.Layout(
+			rootSector,
+			() => ctx.Store.Dispatch(sut),
+			layoutWorkspaceIds: [],
+			noLayoutWorkspaceIds: [workspace1.Id, workspace2.Id]
+		);
+
+		// Then the hidden window's workspace was not activated (the monitor -> workspace map is unchanged)
+		Assert.Equal(workspace1.Id, rootSector.MapSector.MonitorWorkspaceMap[monitors[0].Handle]);
+	}
+
+	[Theory, AutoSubstituteData<StoreCustomization>]
+	internal void WindowRecentlyHiddenByWhim_IsReHidden_NotActivated(
+		IContext ctx,
+		IInternalContext internalCtx,
+		MutableRootSector rootSector
+	)
+	{
+		// Given a window Whim just hid (workspace deactivated), which re-showed itself and asserted
+		// foreground - like Windows Terminal does - so it reports as visible again
+		IWindow window = CreateWindow((HWND)1);
+		Workspace workspace1 = CreateWorkspace();
+		Workspace workspace2 = CreateWorkspace();
+
+		Setup_Monitors(rootSector);
+
+		var monitors = rootSector.MonitorSector.Monitors;
+
+		PopulateMonitorWorkspaceMap(rootSector, monitors[0], workspace1);
+		PopulateWindowWorkspaceMap(rootSector, window, workspace2);
+
+		Setup_MonitorFromWindow(internalCtx, window.Handle, HMONITOR_3);
+
+		internalCtx.CoreNativeManager.IsWindowVisible(window.Handle).Returns(true);
+		rootSector.WindowSector.WhimHiddenWindows = rootSector.WindowSector.WhimHiddenWindows.SetItem(
+			window.Handle,
+			Environment.TickCount
+		);
+
+		WindowFocusedTransform sut = new(window);
+
+		// When we dispatch the transform
+		CustomAssert.Layout(
+			rootSector,
+			() => ctx.Store.Dispatch(sut),
+			layoutWorkspaceIds: [],
+			noLayoutWorkspaceIds: [workspace1.Id, workspace2.Id]
+		);
+
+		// Then the window was re-hidden (it must not be left genuinely visible on the wrong
+		// workspace), and its workspace was not activated. Any resulting spurious minimize-start is
+		// handled separately by WindowMinimizeStartedTransform.
+		ctx.NativeManager.Received(1).HideWindow(window.Handle);
+		Assert.Equal(workspace1.Id, rootSector.MapSector.MonitorWorkspaceMap[monitors[0].Handle]);
 	}
 }

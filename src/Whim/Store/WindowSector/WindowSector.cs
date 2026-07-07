@@ -16,6 +16,15 @@ internal class WindowSector(IContext ctx, IInternalContext internalCtx)
 
 	public ImmutableHashSet<HWND> StartupWindows { get; internal set; } = [];
 
+	/// <summary>
+	/// Windows which Whim itself deliberately hid (e.g. when deactivating their workspace), mapped
+	/// to the <see cref="Environment.TickCount"/> at which they were hidden. Used to detect windows
+	/// which re-show themselves and steal focus immediately after being hidden (Windows Terminal
+	/// does this), so the spurious focus doesn't undo a workspace switch.
+	/// </summary>
+	public ImmutableDictionary<HWND, int> WhimHiddenWindows { get; internal set; } =
+		ImmutableDictionary<HWND, int>.Empty;
+
 	public bool IsMovingWindow { get; internal set; }
 
 	public bool IsLeftMouseButtonDown { get; internal set; }

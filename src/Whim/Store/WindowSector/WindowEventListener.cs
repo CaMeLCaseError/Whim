@@ -150,8 +150,10 @@ internal class WindowEventListener : IDisposable
 		Logger.Debug($"Windows event 0x{eventType:X4} for {window}");
 		switch (eventType)
 		{
-			// `EVENT_OBJECT_SHOW` is handled by the code above to `AddWindow`.
+			// `EVENT_OBJECT_SHOW` is also handled by the code above to `AddWindow`, for brand new
+			// windows. For a window Whim already tracks, react in case it needs to be re-hidden.
 			case PInvoke.EVENT_OBJECT_SHOW:
+				_ctx.Store.Dispatch(new WindowShownTransform(window));
 				break;
 			case PInvoke.EVENT_SYSTEM_FOREGROUND:
 			case PInvoke.EVENT_OBJECT_UNCLOAKED:

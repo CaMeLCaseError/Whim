@@ -296,6 +296,15 @@ internal interface ICoreNativeManager
 	IEnumerable<HWND> GetChildWindows(HWND hWndParent);
 
 	/// <summary>
+	/// Enumerates the visible top-level windows that are owned by <paramref name="owner"/> (e.g. an
+	/// application's tool/palette windows). These are not managed by Whim, so they must be hidden and
+	/// shown alongside their owner when switching workspaces.
+	/// </summary>
+	/// <param name="owner"></param>
+	/// <returns></returns>
+	IEnumerable<HWND> GetOwnedWindows(HWND owner);
+
+	/// <summary>
 	/// Returns <see langword="true"/> when the window is a cloaked window.
 	/// For example, and empty <c>ApplicationFrameWindow</c>.
 	/// For more, see https://social.msdn.microsoft.com/Forums/vstudio/en-US/f8341376-6015-4796-8273-31e0be91da62/difference-between-actually-visible-and-not-visiblewhich-are-there-but-we-cant-see-windows-of?forum=vcgeneral

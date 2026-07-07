@@ -20,6 +20,11 @@ internal partial class NativeManager : INativeManager
 	private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcherQueue =
 		Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 
+	// Visible owned windows (e.g. an app's tool/palette windows) that Whim hid when hiding their
+	// owner, keyed by the owner. Restored when the owner is shown again. See HideWindow /
+	// ShowOwnedWindows.
+	private readonly Dictionary<HWND, List<HWND>> _ownedWindowsHiddenByWhim = [];
+
 	/// <summary>
 	/// Initializes a new instance of the <see cref="NativeManager"/> class.
 	/// </summary>
@@ -51,13 +56,45 @@ internal partial class NativeManager : INativeManager
 	public bool HideWindow(HWND hwnd)
 	{
 		Logger.Debug($"Hiding window HWND {hwnd}");
-		return (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
+		bool result = (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_HIDE);
+
+		// Hide any visible windows owned by this one (e.g. an app's tool/palette windows). Whim
+		// doesn't manage owned windows, so without this they linger on every workspace. Remember the
+		// ones we actually hid, so they can be restored when the owner is shown again.
+		List<HWND> hiddenOwned = [];
+		foreach (HWND owned in _internalContext.CoreNativeManager.GetOwnedWindows(hwnd))
+		{
+			if ((bool)PInvoke.ShowWindow(owned, SHOW_WINDOW_CMD.SW_HIDE))
+			{
+				hiddenOwned.Add(owned);
+			}
+		}
+
+		if (hiddenOwned.Count > 0)
+		{
+			_ownedWindowsHiddenByWhim[hwnd] = hiddenOwned;
+		}
+
+		return result;
+	}
+
+	private void ShowOwnedWindows(HWND owner)
+	{
+		if (_ownedWindowsHiddenByWhim.Remove(owner, out List<HWND>? owned))
+		{
+			foreach (HWND hwnd in owned)
+			{
+				PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
+			}
+		}
 	}
 
 	public bool ShowWindowMaximized(HWND hwnd)
 	{
 		Logger.Debug($"Showing window HWND {hwnd} maximized");
-		return (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWMAXIMIZED);
+		bool result = (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWMAXIMIZED);
+		ShowOwnedWindows(hwnd);
+		return result;
 	}
 
 	public bool ShowWindowMinimized(HWND hwnd)
@@ -75,7 +112,9 @@ internal partial class NativeManager : INativeManager
 	public bool ShowWindowNoActivate(HWND hwnd)
 	{
 		Logger.Verbose($"Showing window HWND {hwnd} no activate");
-		return (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
+		bool result = (bool)PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
+		ShowOwnedWindows(hwnd);
+		return result;
 	}
 
 	public bool RestoreWindow(HWND hwnd)

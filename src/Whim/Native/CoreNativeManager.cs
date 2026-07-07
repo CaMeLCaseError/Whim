@@ -152,6 +152,26 @@ internal class CoreNativeManager(IContext context) : ICoreNativeManager
 		return windows;
 	}
 
+	public IEnumerable<HWND> GetOwnedWindows(HWND owner)
+	{
+		List<HWND> windows = [];
+
+		PInvoke.EnumWindows(
+			(handle, param) =>
+			{
+				if (PInvoke.GetWindow(handle, GET_WINDOW_CMD.GW_OWNER) == owner && PInvoke.IsWindowVisible(handle))
+				{
+					windows.Add(handle);
+				}
+
+				return (BOOL)true;
+			},
+			0
+		);
+
+		return windows;
+	}
+
 	public bool IsStandardWindow(HWND hwnd)
 	{
 		if (PInvoke.GetAncestor(hwnd, GET_ANCESTOR_FLAGS.GA_ROOT) != hwnd || !PInvoke.IsWindowVisible(hwnd))
